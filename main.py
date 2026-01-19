@@ -2,9 +2,9 @@ from fastapi import FastAPI, UploadFile, File, HTTPException
 import httpx
 import asyncio
 from collections import Counter
-from utils import read_image_from_bytes, encode_image_to_bytes, to_grayscale, negative_image, histogram_equalize_color, false_color_map
+from utils import read_image_from_bytes, encode_image_to_bytes, to_grayscale, negative_image, histogram_equalize_color, false_color_map, remove_background_add_white
 
-app = FastAPI(title="Ensemble Tea Leaf Disease Backend")
+app = FastAPI(title="Ensemble Tea Leaf Disease Detection Backend")
 
 # Configuration of your microservices
 # Ensure you run model_service.py on these specific ports with the correct models loaded
@@ -75,20 +75,30 @@ async def query_microservice(client, service_name, service_info, img_cv2):
 
 @app.post("/analyze_leaf")
 async def analyze_leaf(file: UploadFile = File(...)):
+    
+    print(f"Received file: {file.filename}")
+    print(f"Content-Type: {file.content_type}")
+    print(f"File size: {file.size if hasattr(file, 'size') else 'unknown'}")
     # Read original bytes once
     original_bytes = await file.read()
     
+    print("✨ Removing background and normalizing...")
     # Decode to OpenCV format once for processing
     try:
-        original_cv2 = read_image_from_bytes(original_bytes)
+        # GLOBAL PRE-PROCESSING: Remove Background & Make White
+        # This ensures EVERY model sees the clean, isolated leaf.
+        clean_leaf_cv2 = remove_background_add_white(original_bytes)
+        # original_cv2 = read_image_from_bytes(original_bytes)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid image: {e}")
+        print(f"Background removal failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Background removal failed: {e}")
     
     # Parallel Request Processing
     async with httpx.AsyncClient() as client:
         tasks = []
         for name, info in SERVICES.items():
-            tasks.append(query_microservice(client, name, info, original_cv2))
+            # We pass 'clean_leaf_cv2' instead of raw bytes decoding
+            tasks.append(query_microservice(client, name, info, clean_leaf_cv2))
         
         # Wait for all to finish
         microservice_responses = await asyncio.gather(*tasks)

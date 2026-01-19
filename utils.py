@@ -1,12 +1,41 @@
 import cv2
 import numpy as np
 import io
+from PIL import Image
+from rembg import remove
 
 # Map of supported colormap names to cv2 constants (Matching your dataset script)
 _COLORMAP_MAP = {
     "JET": cv2.COLORMAP_JET,
-    # Add others if you trained on them, but JET is default in your script
+    # Add others if you trained on them, but JET is default in my script
 }
+
+def remove_background_add_white(image_bytes):
+    """
+    Removes background using AI and replaces it with solid white.
+    Returns an OpenCV BGR image ready for further processing.
+    """
+    # 1. Decode bytes to PIL Image (rembg works best with PIL)
+    input_image = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
+    
+    # 2. Remove background (Result is RGBA with transparent background)
+    # The 'alpha_matting' parameter helps with fine edges like leaf serrations
+    no_bg_image = remove(input_image, alpha_matting=True)
+    
+    # 3. Create a solid white background of the same size
+    white_bg = Image.new("RGBA", no_bg_image.size, "WHITE")
+    
+    # 4. Composite the no-bg image ON TOP of the white background
+    # usage: source, destination, mask
+    white_bg.paste(no_bg_image, (0, 0), no_bg_image)
+    
+    # 5. Convert to RGB (drop alpha channel)
+    final_pil = white_bg.convert("RGB")
+    
+    # 6. Convert PIL RGB to OpenCV BGR (so your other functions work)
+    final_cv2 = cv2.cvtColor(np.array(final_pil), cv2.COLOR_RGB2BGR)
+    
+    return final_cv2
 
 def read_image_from_bytes(file_bytes):
     """Converts uploaded bytes to an OpenCV image, handling Alpha channels."""
