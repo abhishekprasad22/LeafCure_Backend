@@ -1,8 +1,11 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 import httpx
 import asyncio
 from collections import Counter
+from typing import Optional
 from utils import read_image_from_bytes, encode_image_to_bytes, to_grayscale, negative_image, histogram_equalize_color, false_color_map, remove_background_add_white
+from weather_engine import get_average_temperature, refine_prediction_by_weather, calculate_voting_result
+
 
 app = FastAPI(title="Ensemble Tea Leaf Disease Detection Backend")
 
@@ -16,35 +19,35 @@ SERVICES = {
     "histogram":   {"url": "http://127.0.0.1:8005/predict", "transform": histogram_equalize_color},
 }
 
-def calculate_voting_result(predictions):
-    """
-    Performs Maximum Voting (Majority Rule).
-    If there is a tie in votes, the class with the highest cumulative confidence wins.
-    """
-    valid_predictions = [p for p in predictions if "error" not in p]
+# def calculate_voting_result(predictions):
+#     """
+#     Performs Maximum Voting (Majority Rule).
+#     If there is a tie in votes, the class with the highest cumulative confidence wins.
+#     """
+#     valid_predictions = [p for p in predictions if "error" not in p]
     
-    if not valid_predictions:
-        return {"error": "No successful predictions from microservices"}
+#     if not valid_predictions:
+#         return {"error": "No successful predictions from microservices"}
 
-    # 1. Count votes
-    votes = Counter(p['prediction'] for p in valid_predictions)
+#     # 1. Count votes
+#     votes = Counter(p['prediction'] for p in valid_predictions)
     
-    # 2. Find winner
-    # most_common returns a list of tuples, e.g., [('healthy', 3), ('algal_spot', 2)]
-    top_prediction, top_vote_count = votes.most_common(1)[0]
+#     # 2. Find winner
+#     # most_common returns a list of tuples, e.g., [('healthy', 3), ('algal_spot', 2)]
+#     top_prediction, top_vote_count = votes.most_common(1)[0]
     
-    # 3. Calculate Average Confidence for the winner
-    # We only average the confidence of the models that voted for the winner
-    winning_confidences = [p['confidence'] for p in valid_predictions if p['prediction'] == top_prediction]
-    avg_confidence = sum(winning_confidences) / len(winning_confidences)
+#     # 3. Calculate Average Confidence for the winner
+#     # We only average the confidence of the models that voted for the winner
+#     winning_confidences = [p['confidence'] for p in valid_predictions if p['prediction'] == top_prediction]
+#     avg_confidence = sum(winning_confidences) / len(winning_confidences)
 
-    return {
-        "final_prediction": top_prediction,
-        "final_confidence": round(avg_confidence, 2),
-        "vote_count": top_vote_count,
-        "total_models": len(valid_predictions),
-        "details": valid_predictions # Send back details if frontend wants to show them
-    }
+#     return {
+#         "final_prediction": top_prediction,
+#         "final_confidence": round(avg_confidence, 2),
+#         "vote_count": top_vote_count,
+#         "total_models": len(valid_predictions),
+#         "details": valid_predictions # Send back details if frontend wants to show them
+#     }
 
 async def query_microservice(client, service_name, service_info, img_cv2):
     """Helper function to transform image and send to specific microservice"""
@@ -74,9 +77,16 @@ async def query_microservice(client, service_name, service_info, img_cv2):
         return {"model_name": service_name, "error": str(e)}
 
 @app.post("/analyze_leaf")
-async def analyze_leaf(file: UploadFile = File(...)):
+async def analyze_leaf(
+    file: UploadFile = File(...),
+    use_weather: bool = Form(False),
+    lat: Optional[float] = Form(None),
+    lon: Optional[float] = Form(None)
+):
     
     print(f"Received file: {file.filename}")
+    print(f"Weather Logic Enabled: {use_weather}")
+
     print(f"Content-Type: {file.content_type}")
     print(f"File size: {file.size if hasattr(file, 'size') else 'unknown'}")
     # Read original bytes once
@@ -102,12 +112,25 @@ async def analyze_leaf(file: UploadFile = File(...)):
         
         # Wait for all to finish
         microservice_responses = await asyncio.gather(*tasks)
-        
-    # Calculate Final Result
-    final_result = calculate_voting_result(microservice_responses)
     
+    # DECISION LOGIC
+    # ---------------------------------------------------------
+    if use_weather and lat is not None and lon is not None:
+        print("Engaging Weather Engine...")
+        
+        # A. Get Temp (Real or Test Value)
+        avg_temp = get_average_temperature(lat, lon)
+        
+        # B. Refine Prediction
+        final_result = refine_prediction_by_weather(microservice_responses, avg_temp)
+    else:
+        print("Standard Majority Voting (No Weather)")
+        # Import the old function logic or define it here
+        final_result = calculate_voting_result(microservice_responses)
+    # ---------------------------------------------------------
+   
     return final_result
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run(app, host="127.0.0.1", port=8000, timeout_keep_alive=30)
