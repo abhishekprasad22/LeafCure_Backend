@@ -8,3 +8,5 @@ numpy
 pillow
 rembg        
 onnxruntime
+supabase
+python-dotenv

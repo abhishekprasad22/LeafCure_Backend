@@ -1,3 +1,6 @@
+import os
+import time
+import uuid
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 import httpx
 import asyncio
@@ -5,7 +8,28 @@ from collections import Counter
 from typing import Optional
 from utils import read_image_from_bytes, encode_image_to_bytes, to_grayscale, negative_image, histogram_equalize_color, false_color_map, remove_background_add_white
 from weather_engine import get_average_temperature, refine_prediction_by_weather, calculate_voting_result
+from supabase import create_client, Client
+from dotenv import load_dotenv
 
+# 👇 1. Load the .env file immediately
+load_dotenv()
+
+# --- 🟢 SUPABASE CONFIGURATION (Phase 2) ---
+# Replace these with your actual details from Phase 1
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+
+
+if not SUPABASE_URL or not SUPABASE_KEY:
+    print("❌ CRITICAL ERROR: Supabase credentials not found in .env file!")
+    supabase = None
+else:
+    try:
+        supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+        print("✅ Connected to Supabase (Securely)!")
+    except Exception as e:
+        print(f"⚠️ Connection Failed: {e}")
+        supabase = None
 
 app = FastAPI(title="Ensemble Tea Leaf Disease Detection Backend")
 
@@ -76,12 +100,49 @@ async def query_microservice(client, service_name, service_info, img_cv2):
         print(f"Error querying {service_name}: {str(e)}")
         return {"model_name": service_name, "error": str(e)}
 
+# --- 🟢 HISTORY SAVING FUNCTION ---
+def save_prediction_to_db(user_id, image_bytes, result):
+    if not supabase:
+        return
+        
+    print(f"💾 Saving history for User: {user_id}")
+    try:
+        # 1. Generate a unique filename
+        filename = f"{user_id}/{int(time.time())}_{uuid.uuid4().hex[:8]}.jpg"
+        
+        # 2. Upload Image to Supabase Storage
+        supabase.storage.from_("leaf_images").upload(
+            path=filename,
+            file=image_bytes,
+            file_options={"content-type": "image/jpeg"}
+        )
+        
+        # 3. Get Public URL of the image
+        # (This assumes the bucket is public or you use signed URLs. 
+        # For simplicity in this app, we store the path)
+        image_path = filename 
+        
+        # 4. Insert Record into DB
+        data = {
+            "user_id": user_id,
+            "image_path": image_path,
+            "prediction": result['final_prediction'],
+            "confidence": result['final_confidence']
+        }
+        supabase.table("predictions").insert(data).execute()
+        print("✅ History saved successfully!")
+        
+    except Exception as e:
+        print(f"❌ Failed to save history: {e}")
+# ----------------------------------
+
 @app.post("/analyze_leaf")
 async def analyze_leaf(
     file: UploadFile = File(...),
     use_weather: bool = Form(False),
     lat: Optional[float] = Form(None),
-    lon: Optional[float] = Form(None)
+    lon: Optional[float] = Form(None),
+    user_id: Optional[str] = Form(None) # 👈 NEW PARAMETER
 ):
     
     print(f"Received file: {file.filename}")
@@ -128,6 +189,12 @@ async def analyze_leaf(
         # Import the old function logic or define it here
         final_result = calculate_voting_result(microservice_responses)
     # ---------------------------------------------------------
+    # 4. 🟢 Save to Supabase (Async-ish)
+    if user_id:
+        # We perform this *after* getting the result so the user doesn't wait too long,
+        # but in synchronous Python, it still blocks slightly. 
+        # For production, use BackgroundTasks. For now, direct call is fine.
+        save_prediction_to_db(user_id, original_bytes, final_result)
    
     return final_result
 
