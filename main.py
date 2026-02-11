@@ -11,7 +11,7 @@ from weather_engine import get_average_temperature, refine_prediction_by_weather
 from supabase import create_client, Client
 from dotenv import load_dotenv
 
-# 👇 1. Load the .env file immediately
+# Load the .env file immediately
 load_dotenv()
 
 # --- 🟢 SUPABASE CONFIGURATION (Phase 2) ---
@@ -127,7 +127,8 @@ def save_prediction_to_db(user_id, image_bytes, result):
             "user_id": user_id,
             "image_path": image_path,
             "prediction": result['final_prediction'],
-            "confidence": result['final_confidence']
+            "confidence": result['final_confidence'],
+            "analysis_data": result # Saving the full detailed report
         }
         supabase.table("predictions").insert(data).execute()
         print("✅ History saved successfully!")
