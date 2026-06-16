@@ -14,8 +14,8 @@ DISEASE_TEMP_RANGES = {
 }
 
 # --- 2. TESTING CONFIGURATION ---
-# 🟢 SET THIS TO A NUMBER (e.g., 36.0) TO FORCE A TEST TEMP
-# 🔴 SET THIS TO None TO USE REAL GPS WEATHER DATA
+# SET THIS TO A NUMBER (e.g., 36.0) TO FORCE A TEST TEMP
+# SET THIS TO None TO USE REAL GPS WEATHER DATA
 TEST_OVERRIDE_TEMP = None
 
 def get_average_temperature(lat, lon):
@@ -23,12 +23,12 @@ def get_average_temperature(lat, lon):
     Fetches historical weather for the last 30 days from Open-Meteo 
     and returns the average temperature.
     """
-    # 🧪 TESTING HOOK: If we set a test value, return it immediately
+    # TESTING HOOK: If we set a test value, return it immediately
     if TEST_OVERRIDE_TEMP is not None:
         print(f"🧪 [TEST MODE] Using Hardcoded Temp: {TEST_OVERRIDE_TEMP}°C")
         return TEST_OVERRIDE_TEMP
 
-    print(f"☁️ Fetching weather for Lat: {lat}, Lon: {lon}...")
+    print(f"Fetching weather for Lat: {lat}, Lon: {lon}...")
     
     try:
         # Calculate dates
@@ -60,11 +60,11 @@ def get_average_temperature(lat, lon):
             return 25.0
             
         avg_temp = sum(valid_temps) / len(valid_temps)
-        print(f"✅ Calculated Avg Temp (30 days): {avg_temp:.2f}°C")
+        print(f"Calculated Avg Temp (30 days): {avg_temp:.2f}°C")
         return avg_temp
 
     except Exception as e:
-        print(f"❌ Weather API Failed: {e}")
+        print(f"Weather API Failed: {e}")
         # Return a 'safe' temp that fits most ranges if API fails
         return 25.0 
 
@@ -82,7 +82,7 @@ def is_compatible(disease_name, temp):
             break
             
     if not range_limit:
-        print(f"⚠️ Unknown disease '{disease_name}', assuming compatible.")
+        print(f"Unknown disease '{disease_name}', assuming compatible.")
         return True # Default to True if we don't know the disease
         
     min_t, max_t = range_limit
@@ -105,8 +105,8 @@ def refine_prediction_by_weather(predictions, avg_temp):
     # We create a list of candidates: ['Algal Spot', 'Healthy', ...] ordered by rank
     ranked_candidates = votes.most_common() # Returns [('Healthy', 3), ('Algal Spot', 2)]
     
-    print(f"📊 Initial Voting Standings: {ranked_candidates}")
-    print(f"🌡️ Checking against Temp: {avg_temp}°C")
+    print(f"Initial Voting Standings: {ranked_candidates}")
+    print(f"Checking against Temp: {avg_temp}°C")
 
     # 3. Iterate through candidates to find the first 'Weather Compatible' one
     final_winner = None
@@ -114,14 +114,14 @@ def refine_prediction_by_weather(predictions, avg_temp):
     for disease, count in ranked_candidates:
         if is_compatible(disease, avg_temp):
             final_winner = disease
-            print(f"✅ ACCEPTED '{disease}' (Compatible with {avg_temp}°C)")
+            print(f"ACCEPTED '{disease}' (Compatible with {avg_temp}°C)")
             break
         else:
-            print(f"❌ REJECTED '{disease}' (Incompatible with {avg_temp}°C)")
+            print(f"REJECTED '{disease}' (Incompatible with {avg_temp}°C)")
             
     # Fallback: If ALL are incompatible (rare), keep the original top voter
     if final_winner is None:
-        print("⚠️ No compatible disease found. Reverting to majority vote.")
+        print("No compatible disease found. Reverting to majority vote.")
         final_winner = ranked_candidates[0][0]
 
     # 4. Recalculate stats for the NEW winner

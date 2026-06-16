@@ -14,21 +14,21 @@ from dotenv import load_dotenv
 # Load the .env file immediately
 load_dotenv()
 
-# --- 🟢 SUPABASE CONFIGURATION (Phase 2) ---
+# --- SUPABASE CONFIGURATION (Phase 2) ---
 # Replace these with your actual details from Phase 1
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
 
 if not SUPABASE_URL or not SUPABASE_KEY:
-    print("❌ CRITICAL ERROR: Supabase credentials not found in .env file!")
+    print("CRITICAL ERROR: Supabase credentials not found in .env file!")
     supabase = None
 else:
     try:
         supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-        print("✅ Connected to Supabase (Securely)!")
+        print("Connected to Supabase (Securely)!")
     except Exception as e:
-        print(f"⚠️ Connection Failed: {e}")
+        print(f"Connection Failed: {e}")
         supabase = None
 
 app = FastAPI(title="Ensemble Tea Leaf Disease Detection Backend")
@@ -100,12 +100,12 @@ async def query_microservice(client, service_name, service_info, img_cv2):
         print(f"Error querying {service_name}: {str(e)}")
         return {"model_name": service_name, "error": str(e)}
 
-# --- 🟢 HISTORY SAVING FUNCTION ---
+# --- HISTORY SAVING FUNCTION ---
 def save_prediction_to_db(user_id, image_bytes, result):
     if not supabase:
         return
         
-    print(f"💾 Saving history for User: {user_id}")
+    print(f"Saving history for User: {user_id}")
     try:
         # 1. Generate a unique filename
         filename = f"{user_id}/{int(time.time())}_{uuid.uuid4().hex[:8]}.jpg"
@@ -131,10 +131,10 @@ def save_prediction_to_db(user_id, image_bytes, result):
             "analysis_data": result # Saving the full detailed report
         }
         supabase.table("predictions").insert(data).execute()
-        print("✅ History saved successfully!")
+        print("History saved successfully!")
         
     except Exception as e:
-        print(f"❌ Failed to save history: {e}")
+        print(f"Failed to save history: {e}")
 # ----------------------------------
 
 @app.post("/analyze_leaf")
@@ -143,7 +143,7 @@ async def analyze_leaf(
     use_weather: bool = Form(False),
     lat: Optional[float] = Form(None),
     lon: Optional[float] = Form(None),
-    user_id: Optional[str] = Form(None) # 👈 NEW PARAMETER
+    user_id: Optional[str] = Form(None) # NEW PARAMETER
 ):
     
     print(f"Received file: {file.filename}")
@@ -154,7 +154,7 @@ async def analyze_leaf(
     # Read original bytes once
     original_bytes = await file.read()
     
-    print("✨ Removing background and normalizing...")
+    print("Removing background and normalizing...")
     # Decode to OpenCV format once for processing
     try:
         # GLOBAL PRE-PROCESSING: Remove Background & Make White
@@ -190,7 +190,7 @@ async def analyze_leaf(
         # Import the old function logic or define it here
         final_result = calculate_voting_result(microservice_responses)
     # ---------------------------------------------------------
-    # 4. 🟢 Save to Supabase (Async-ish)
+    # 4. Save to Supabase (Async-ish)
     if user_id:
         # We perform this *after* getting the result so the user doesn't wait too long,
         # but in synchronous Python, it still blocks slightly. 

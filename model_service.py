@@ -27,7 +27,7 @@ print(f"[-] Raw Path Input:   {raw_path}")
 print(f"[-] Fixed Absolute:   {fixed_model_path}")
 
 if not path_obj.exists():
-    print(f"❌ CRITICAL ERROR: Python still cannot see the file at: {fixed_model_path}")
+    print(f"CRITICAL ERROR: Python still cannot see the file at: {fixed_model_path}")
     # Check if it's a relative path issue
     print(f"    (Current Working Directory is: {os.getcwd()})")
     exit(1)
@@ -39,9 +39,9 @@ app = FastAPI(title=f"{args.name} Service")
 print(f"Loading model from {fixed_model_path}...")
 try:
     model = tf.keras.models.load_model(fixed_model_path)
-    print(f"✅ Model {args.name} loaded successfully!")
+    print(f"Model {args.name} loaded successfully!")
 except Exception as e:
-    print(f"❌ FAILED to load model. Error details:\n{e}")
+    print(f"FAILED to load model. Error details:\n{e}")
     exit(1)
 
 # Define class names
