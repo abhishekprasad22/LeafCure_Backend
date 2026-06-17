@@ -1,7 +1,7 @@
 import requests
 import datetime
 from collections import Counter
-
+from collections import Counter, defaultdict
 # --- 1. CONFIGURATION TABLE ---
 # The ranges you provided
 DISEASE_TEMP_RANGES = {
@@ -25,7 +25,7 @@ def get_average_temperature(lat, lon):
     """
     # TESTING HOOK: If we set a test value, return it immediately
     if TEST_OVERRIDE_TEMP is not None:
-        print(f"🧪 [TEST MODE] Using Hardcoded Temp: {TEST_OVERRIDE_TEMP}°C")
+        print(f"[TEST MODE] Using Hardcoded Temp: {TEST_OVERRIDE_TEMP}°C")
         return TEST_OVERRIDE_TEMP
 
     print(f"Fetching weather for Lat: {lat}, Lon: {lon}...")
@@ -56,7 +56,7 @@ def get_average_temperature(lat, lon):
         valid_temps = [t for t in temps if t is not None]
         
         if not valid_temps:
-            print("⚠️ No temp data found, returning default safe value (25°C)")
+            print("No temp data found, returning default safe value (25°C)")
             return 25.0
             
         avg_temp = sum(valid_temps) / len(valid_temps)
@@ -141,30 +141,106 @@ def refine_prediction_by_weather(predictions, avg_temp):
     }
 
 
+# def calculate_voting_result(predictions):
+#     """
+#     Performs Standard Maximum Voting (Majority Rule) without Weather Logic.
+#     """
+#     valid_predictions = [p for p in predictions if "error" not in p]
+    
+#     if not valid_predictions:
+#         return {"error": "No successful predictions from microservices"}
+
+#     # 1. Count votes
+#     votes = Counter(p['prediction'] for p in valid_predictions)
+    
+#     # 2. Find winner
+#     # most_common returns a list of tuples, e.g., [('healthy', 3), ('algal_spot', 2)]
+#     top_prediction, top_vote_count = votes.most_common(1)[0]
+    
+#     # 3. Calculate Average Confidence for the winner
+#     winning_confidences = [p['confidence'] for p in valid_predictions if p['prediction'] == top_prediction]
+#     avg_confidence = sum(winning_confidences) / len(winning_confidences)
+
+#     return {
+#         "final_prediction": top_prediction,
+#         "final_confidence": round(avg_confidence, 2),
+#         "vote_count": top_vote_count,
+#         "total_models": len(valid_predictions),
+#         "details": valid_predictions 
+#     }
+
 def calculate_voting_result(predictions):
     """
-    Performs Standard Maximum Voting (Majority Rule) without Weather Logic.
-    """
-    valid_predictions = [p for p in predictions if "error" not in p]
+    Hybrid Ensemble Voting with Confidence Tie-Breaker.
     
+    1. Count votes for each disease.
+    2. Find disease(s) with maximum votes.
+    3. If no tie, return the winner.
+    4. If tied, use cumulative confidence as a tie-breaker.
+    """
+    # Remove failed predictions
+    valid_predictions = [p for p in predictions if "error" not in p]
+
     if not valid_predictions:
         return {"error": "No successful predictions from microservices"}
 
-    # 1. Count votes
-    votes = Counter(p['prediction'] for p in valid_predictions)
+    # --------------------------------------------------
+    # STEP 1: Count votes
+    # --------------------------------------------------
+    vote_counter = Counter(p["prediction"] for p in valid_predictions)
+    max_votes = max(vote_counter.values())
+
+    # Diseases having highest vote count
+    top_candidates = [
+        disease for disease, count in vote_counter.items() 
+        if count == max_votes
+    ]
+
+    # --------------------------------------------------
+    # STEP 2: No Tie
+    # --------------------------------------------------
+    if len(top_candidates) == 1:
+        winner = top_candidates[0]
+        winner_confidences = [
+            p["confidence"] for p in valid_predictions 
+            if p["prediction"] == winner
+        ]
+        avg_confidence = sum(winner_confidences) / len(winner_confidences)
+
+        return {
+            "final_prediction": winner,
+            "final_confidence": round(avg_confidence, 2),
+            "vote_count": max_votes,
+            "total_models": len(valid_predictions),
+            "decision_method": "majority_vote",
+            "details": valid_predictions
+        }
+
+    # --------------------------------------------------
+    # STEP 3: Tie Break Using Cumulative Confidence
+    # --------------------------------------------------
+    confidence_totals = defaultdict(float)
+
+    for prediction in valid_predictions:
+        disease = prediction["prediction"]
+        if disease in top_candidates:
+            confidence_totals[disease] += prediction["confidence"]
+
+    # Select the candidate with the highest cumulative confidence
+    winner = max(confidence_totals, key=confidence_totals.get)
     
-    # 2. Find winner
-    # most_common returns a list of tuples, e.g., [('healthy', 3), ('algal_spot', 2)]
-    top_prediction, top_vote_count = votes.most_common(1)[0]
-    
-    # 3. Calculate Average Confidence for the winner
-    winning_confidences = [p['confidence'] for p in valid_predictions if p['prediction'] == top_prediction]
-    avg_confidence = sum(winning_confidences) / len(winning_confidences)
+    winner_confidences = [
+        p["confidence"] for p in valid_predictions 
+        if p["prediction"] == winner
+    ]
+    avg_confidence = sum(winner_confidences) / len(winner_confidences)
 
     return {
-        "final_prediction": top_prediction,
+        "final_prediction": winner,
         "final_confidence": round(avg_confidence, 2),
-        "vote_count": top_vote_count,
+        "vote_count": max_votes,
         "total_models": len(valid_predictions),
-        "details": valid_predictions 
+        "decision_method": "vote_tie_confidence_break",
+        "confidence_totals": dict(confidence_totals),
+        "details": valid_predictions
     }
