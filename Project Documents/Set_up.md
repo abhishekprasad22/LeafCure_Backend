@@ -1,59 +1,117 @@
-### 1\. `utils.py`
+# Setup Guide
 
-**Changes:** Updated the transformation functions to strictly match the logic used in your training dataset generation (e.g., using `YCrCb` for histogram equalization instead of `YUV`, and handling Alpha channels).
+This guide explains how to install and run the LeafCure backend locally.
 
----
+## 1. Create Virtual Environment
 
-### 2\. `main.py`
+Run these commands from the project root:
 
-1.  Orchestrates the transformations locally using `utils`.
-2.  Sends transformed images to specific ports.
-3.  **Voting Logic:** Aggregates results, counts votes, and returns the winner.
+```powershell
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+```
 
-### 3\. `model_service.py`
-
-You run this script 5 times in different terminals with the correct arguments.
-
-**Example commands to run your fleet:**
+For Git Bash or Linux/macOS:
 
 ```bash
-# Terminal 1 (Original)
+python -m venv venv
+source venv/bin/activate
+```
+
+## 2. Install Dependencies
+
+```powershell
+pip install -r requirements.txt
+```
+
+## 3. Configure Environment Variables
+
+Create a `.env` file in the project root:
+
+```env
+SUPABASE_URL=your_supabase_project_url
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
+```
+
+These values are required only for saving prediction history. The prediction endpoint can run without Supabase.
+
+## 4. Verify Model Files
+
+Confirm that these files exist:
+
+```text
+models/original_model.keras
+models/grayscale_model.keras
+models/negative_model.keras
+models/false_color_model.keras
+models/histogram_model.keras
+```
+
+## 5. Start Model Services
+
+Open five terminals from the project root and run one command in each terminal.
+
+Terminal 1:
+
+```powershell
 python model_service.py --model_path models/original_model.keras --port 8001 --name Original
+```
 
-# Terminal 2 (Grayscale)
+Terminal 2:
+
+```powershell
 python model_service.py --model_path models/grayscale_model.keras --port 8002 --name Grayscale
+```
 
-# Terminal 3 (Negative)
+Terminal 3:
+
+```powershell
 python model_service.py --model_path models/negative_model.keras --port 8003 --name Negative
+```
 
-# Terminal 4 (False Color)
+Terminal 4:
+
+```powershell
 python model_service.py --model_path models/false_color_model.keras --port 8004 --name FalseColor
+```
 
-# Terminal 5 (Histogram)
+Terminal 5:
+
+```powershell
 python model_service.py --model_path models/histogram_model.keras --port 8005 --name Histogram
 ```
 
-### 4\. `requirements.txt`
+## 6. Start Main API
 
-Updated to include necessary libraries.
+Open another terminal from the project root:
 
-```text
-fastapi
-uvicorn
-tensorflow
-opencv-python
-python-multipart
-httpx
-numpy
-pillow
+```powershell
+python main.py
 ```
 
-### How it works now:
+The main API starts at:
 
-1.  User sends **1 image** to `main.py` (port 8000).
-2.  `main.py` converts that image into OpenCV format.
-3.  `main.py` creates 4 copies and applies the math from `utils.py` (e.g., Histogram Equalization).
-4.  `main.py` sends the specific version of the image to the specific model running on ports 8001-8005.
-5.  The models predict and return the class.
-6.  `main.py` counts the votes (e.g., "Healthy": 3 votes, "Algal Spot": 2 votes).
-7.  `main.py` returns "Healthy" to the user.
+```text
+http://127.0.0.1:8000
+```
+
+## 7. Test The API
+
+Open:
+
+```text
+http://127.0.0.1:8000/docs
+```
+
+Use the `/analyze_leaf` endpoint to upload a leaf image.
+
+## How The Backend Works
+
+1. The user uploads one leaf image to `main.py` on port `8000`.
+2. The backend removes the background and normalizes the image.
+3. The backend creates transformed versions of the image using `utils.py`.
+4. The backend sends the image versions to model services on ports `8001` to `8005`.
+5. Each model returns a disease prediction and confidence score.
+6. The backend applies majority voting.
+7. If weather mode is enabled, the backend checks the result against recent average temperature.
+8. The final result is returned to the client.
